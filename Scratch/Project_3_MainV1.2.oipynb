@@ -1,0 +1,910 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Project 3 Hassan Alam\n",
+    "## Goal:\n",
+    "Deveop framework for Multi-Variate Time Series Forecast\n",
+    "\n",
+    "## Sections\n",
+    "\n",
+    "Section 1: Import All Libraries<br>\n",
+    "Section 2: Import Alpaca Data<br>\n",
+    "Section 3: NewsAPI<br>\n",
+    "Section 4: Get Tones from IBM<br>\n",
+    "Section 5: Integrate data<br>\n",
+    "Section 6: LSTM<br>\n",
+    "Section 7: Dashboard<br>\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Notes - to delete\n",
+    "1. v 1.0 All cells working.<br>\n",
+    "2. v 1.1 Move LSTM to end<br>\n",
+    "3. v 1.1.1. new sequence working<br>\n",
+    "4. v 1.1.2. updated to add Section 5 in the middle for integrating all data<br>\n",
+    "5. v 1.1.3 fixed in news sentiment api take info from news API<br>\n",
+    "6. v 1.1.4 need to  combine price data with sentiment data<br>\n",
+    "7. v 1.1.5 test lstm with combinded ata. - working<br>\n",
+    "8. v 1.1.6 working version of lSTM <br>\n",
+    "9. v 1.1.7 alpaca imported<br>\n",
+    "10. v 1.1.8 end to end test<br>\n",
+    "11. v 1.1.9 clean up unwanted cells\n",
+    "12  v 1.2.0 cleaned up end to end"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "##  <span style=\"color:red\">Section 1: Import All Libraries"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 184,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "True"
+      ]
+     },
+     "execution_count": 184,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "import alpaca_trade_api as tradeapi\n",
+    "import json\n",
+    "import numpy as np\n",
+    "import os\n",
+    "import pandas as pd\n",
+    "import requests\n",
+    "\n",
+    "from datetime import datetime, date, timedelta\n",
+    "# from datetime import date\n",
+    "from dotenv import load_dotenv\n",
+    "from ibm_watson import ToneAnalyzerV3\n",
+    "from ibm_cloud_sdk_core.authenticators import IAMAuthenticator\n",
+    "from keras.models import Sequential\n",
+    "from keras.layers import Dense, LSTM\n",
+    "# from keras.layers import LSTM\n",
+    "from math import sqrt\n",
+    "from matplotlib import pyplot\n",
+    "from newsapi import NewsApiClient\n",
+    "from numpy import concatenate\n",
+    "# from numpy import concatenate\n",
+    "from pandas import read_csv, DataFrame, concat\n",
+    "# from pandas import DataFrame\n",
+    "# from pandas import concat\n",
+    "from pandas.io.json import json_normalize\n",
+    "# import pandas as pd\n",
+    "from pandas import read_csv\n",
+    "from pathlib import Path\n",
+    "from sklearn.preprocessing import LabelEncoder, MinMaxScaler\n",
+    "# from sklearn.preprocessing import LabelEncoder\n",
+    "from sklearn.metrics import mean_squared_error\n",
+    "\n",
+    "\n",
+    "%matplotlib inline\n",
+    "load_dotenv('test1.env')"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "##  <span style=\"color:red\">Section 2: Import Alpaca Data"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Section 2.1 TBD\n",
+    "Import last one month from Alpacaa based on stock.<br>\n",
+    "Function global variable that is stock."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 185,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Set Alpaca API key and secret\n",
+    "alpaca_api_key = os.getenv(\"ALPACA_API_KEY\")\n",
+    "alpaca_secret_key = os.getenv(\"ALPACA_SECRET_KEY\")\n",
+    "# type(alpaca_secret_key)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 186,
+   "metadata": {
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# Set Alpaca API key and secret\n",
+    "alpaca_api_key = os.getenv(\"ALPACA_API_KEY\")\n",
+    "alpaca_secret_key = os.getenv(\"ALPACA_SECRET_KEY\")\n",
+    "\n",
+    "api = tradeapi.REST(\n",
+    "    alpaca_api_key,\n",
+    "    alpaca_secret_key,\n",
+    "    api_version = \"v2\"\n",
+    ")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 187,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def get_alapa_prices (in_tick_list, \n",
+    "                      alpaca_api_key: str, \n",
+    "                      alpaca_secret_key: str, \n",
+    "                      in_start_date: str, in_end_date= \"\"):\n",
+    "    '''get asset price list from AlPaca\n",
+    "    \n",
+    "    Args:\n",
+    "        in_tick_list(list): list of tickers in the form of string\n",
+    "        ALPACA_API_KEY(str): from you alpaca account\n",
+    "        ALPACA_SECRET_KEY(str): from your alpaca account\n",
+    "        in_start_date(str): in the form 'yyyy-mm-dd'\n",
+    "        in_end_date (str): optional. Will set today as default\n",
+    "        \n",
+    "    Returns:\n",
+    "        DataFrame: a two index DataFrame \n",
+    "            first index ticker symol from in_tick_list\n",
+    "            second index: open, high, low, close, volume\n",
+    "    \n",
+    "    '''\n",
+    "    # set up alpaca\n",
+    "    api = tradeapi.REST(\n",
+    "        alpaca_api_key,\n",
+    "        alpaca_secret_key,\n",
+    "        api_version = \"v2\"\n",
+    "        )  \n",
+    "    \n",
+    "    #set up dates\n",
+    "    start_date = pd.Timestamp(in_start_date, tz=\"America/New_York\").isoformat()\n",
+    "    if in_end_date != '': #'if not blank'\n",
+    "        end_date = pd.Timestamp(in_end_date, tz=\"America/New_York\").isoformat()\n",
+    "    else:\n",
+    "        end_date = date.today().strftime(\"%Y-%m-%d\")\n",
+    "\n",
+    "       \n",
+    "    #  break up into chunks for 100\n",
+    "    n = 100\n",
+    "    tic_lists = [in_tick_list[i:i + n] for i in range(0, len(in_tick_list), n)]  \n",
+    "        \n",
+    "    #loop through tickers \n",
+    "    comb_df = pd.DataFrame()\n",
+    "    timeframe = \"1D\"\n",
+    "    for tickers in tic_lists:\n",
+    "        #get in batches of 100\n",
+    "        df_ticker = api.get_barset(\n",
+    "            tickers,\n",
+    "            timeframe,\n",
+    "            start=start_date,\n",
+    "            end=end_date,\n",
+    "            limit=1000,\n",
+    "            ).df \n",
+    "        comb_df = pd.concat( [comb_df, df_ticker], axis = 1)\n",
+    "        \n",
+    "    return comb_df"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 188,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def extrct_close(in_df):\n",
+    "    '''extract dataframe single index and close prices\n",
+    "    \n",
+    "    Args:\n",
+    "        in_df(DataFrame): Dataframe of stock prices from get_alapa_prices\n",
+    "\n",
+    "        \n",
+    "    Returns:\n",
+    "        DataFrame: single column index with ticker symbol as column lables \n",
+    "            first index ticker symol from in_tick_list\n",
+    "            second index: open, high, low, close, volume\n",
+    "    \n",
+    "    ''' \n",
+    "    df_close = pd.DataFrame()\n",
+    "    tickers = list(in_df.columns.levels[0])\n",
+    "    for cur_tick in tickers:\n",
+    "        df_close[cur_tick] = in_df [cur_tick]['close']\n",
+    "        \n",
+    "    return df_close"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 189,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# not used\n",
+    "def return_stats (in_df):\n",
+    "    '''create data frame of stats of daily returns\n",
+    "    \n",
+    "    Args:\n",
+    "        in_df(DataFrame): Dataframe of closing stock prices\n",
+    "\n",
+    "        \n",
+    "    Returns:\n",
+    "        DataFrame: return data from of daily returns \n",
+    "    \n",
+    "    ''' \n",
+    " \n",
+    "    df_pct_chgn = in_df.pct_change() #get daily percentage change\n",
+    "    df_stats = pd.DataFrame() #create stats dataframe\n",
+    "    df_stats = df_pct_chgn.skew().to_frame() #add skew\n",
+    "    df_stats.columns = ['skew'] #rename  column\n",
+    "    df_stats['mean'] = df_pct_chgn.mean() #add mean\n",
+    "    df_stats['std'] = df_pct_chgn.std() #add std dev\n",
+    "    return df_stats\n",
+    "    \n",
+    "    "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 190,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "from_date = (date.today()- timedelta(30)).strftime(\"%Y-%m-%d\")\n",
+    "to_date = date.today().strftime(\"%Y-%m-%d\")\n",
+    "stock_list = ['GOOG']"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 191,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df_stock_prices = get_alapa_prices(stock_list, alpaca_api_key, alpaca_secret_key, from_date )\n",
+    "df_close = extrct_close(df_stock_prices)\n",
+    "df_stats = return_stats(df_close)\n",
+    "# df_stats.sample(5)\n",
+    "# df_close.head(2)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Section 2.2 \n",
+    "Currently reads file. Need to put in Alpaca"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### 2.x Do pct change"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### 2.x Do Fraction and log change"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 192,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df_close.shift().head(5)\n",
+    "df_change = df_close/df_close.shift()\n",
+    "df_log_change = np.log(df_close/df_close.shift())\n",
+    "# df_log_change.head(2)\n",
+    "raw_df = df_log_change"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### 2.x select sub setion of columns"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "2. xx Change index to day"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 193,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "date_index_df = raw_df.copy()\n",
+    "# test.index = pd.to_datetime(test.index, format = '%Y-%m-%d')\n",
+    "date_index_df.index = date_index_df.index.strftime('%Y-%m-%d')\n",
+    "# date_index_df.head(2)\n",
+    "date_index_df.dropna(inplace = True, how = 'all')\n",
+    "# date_index_df.head(2)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## <span style=\"color:red\">Section 3: NewsAPI"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### 3.1. \n",
+    "1. parameterize topic for query\n",
+    "2. current system only does last 30 days.. once code is done download last 3 years to get test data on all stocks\n",
+    "3. Need to synchronize with stock time data\n",
+    "4. delete all oil info"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 194,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# from newsapi import NewsApiClient"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 195,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Create a newsapi client\n",
+    "api_key = os.getenv(\"news_api\")\n",
+    "newsapi = NewsApiClient(api_key=api_key)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 196,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# can only get 30 days of data without paid accoutn\n",
+    "# set start date to 30 days ago\n",
+    "from_date = (date.today()- timedelta(30)).strftime(\"%Y-%m-%d\")\n",
+    "#set endate as today\n",
+    "to_date = date.today().strftime(\"%Y-%m-%d\")\n",
+    "# this is current topic. parameterize this\n",
+    "query = \"google\"\n",
+    "all_articles = newsapi.get_everything(q=query,language='en',\n",
+    "        sort_by='relevancy',from_param=from_date,to=to_date)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 197,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def sort_news (in_news):\n",
+    "    '''\n",
+    "    loop through artiles in news api and sort by date.\n",
+    "    create data frame \n",
+    "    one dataframe with full content\n",
+    "    second with text and date only\n",
+    "    '''\n",
+    "    #convert articles to dataframe\n",
+    "    art_df = pd.DataFrame.from_dict(all_articles['articles'])\n",
+    "    #change to a date string\n",
+    "#     df['age']=df.apply(lambda x: x['age']+3,axis=1)\n",
+    "    # create a column text that concats title descripiton and content\n",
+    "    art_df ['text'] = art_df['title'] + \" \" + art_df['description'] + \" \" + art_df['content']\n",
+    "    art_df['date'] = art_df['publishedAt'].apply (lambda x: x[:10])\n",
+    "    #sort by date\n",
+    "    art_df.sort_values (by=['date'], inplace = True)\n",
+    "    #concat all text by date\n",
+    "    text_df = art_df.groupby('date')['text'].apply (lambda x: ','.join (x)).reset_index()\n",
+    "    return art_df, text_df\n",
+    "    \n",
+    "    "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 198,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "art_df, text_df = sort_news(all_articles)\n",
+    "# text_df.head(5)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 199,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "test_text = text_df.copy()\n",
+    "test_text.set_index('date', drop = True, inplace = True)\n",
+    "# test_text.head()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "#### 3.2.2 combine data with news and and convert NA text to ''\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 200,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "C:\\Users\\Hassan\\AppData\\Roaming\\Python\\Python37\\site-packages\\ipykernel_launcher.py:1: FutureWarning: Sorting because non-concatenation axis is not aligned. A future version\n",
+      "of pandas will change to not sort by default.\n",
+      "\n",
+      "To accept the future behavior, pass 'sort=False'.\n",
+      "\n",
+      "To retain the current behavior and silence the warning, pass 'sort=True'.\n",
+      "\n",
+      "  \"\"\"Entry point for launching an IPython kernel.\n"
+     ]
+    }
+   ],
+   "source": [
+    "news_price = pd.concat([date_index_df, test_text], axis = 1, join = \"outer\")\n",
+    "news_price['text'] = news_price['text'].fillna(value = 'no items in news today ' + query)\n",
+    "# news_price.tail(20)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## <span style=\"color:red\">Section 4: Get Tones from IBM"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "4.1 Read the Keys"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 201,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Get the Tone Analyzer API Key and URL\n",
+    "# todo make into function\n",
+    "tone_api = os.getenv(\"TONE_ANALYZER_APIKEY\")\n",
+    "tone_url = os.getenv(\"TONE_ANALYZER_URL\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "4.2 Initiaze IBM"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 202,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def init_ibm():\n",
+    "    '''\n",
+    "    code to initialize IBM netork\n",
+    "    '''\n",
+    "    #load environment\n",
+    "    load_dotenv('ibm-credentials.env')\n",
+    "    # Initialize Tone Analyser Client\n",
+    "\n",
+    "    # Create authentication object\n",
+    "    authenticator = IAMAuthenticator(tone_api)\n",
+    "\n",
+    "    # Create tone_analyzer instance\n",
+    "    tone_analyzer = ToneAnalyzerV3(\n",
+    "        version=\"2017-09-21\",\n",
+    "        authenticator=authenticator                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                \n",
+    "    )\n",
+    "\n",
+    "    # Set the service endpoint\n",
+    "    tone_analyzer.set_service_url(tone_url)\n",
+    "    return tone_analyzer"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "4.3 Function to create tone for each line of text and create a series<br>\n",
+    "todo handle if there is no tone"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 203,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def create_tone_series(in_text):\n",
+    "    '''\n",
+    "    Takes a text and generates a series of tones based on tonlist\n",
+    "    need to make sure IBM network is alived\n",
+    "    in_text = text to be analzye\n",
+    "    in_tn = tone analyzer\n",
+    "    \n",
+    "    '''\n",
+    "    #set error variabes\n",
+    "    sent_tone = False\n",
+    "    doc_tone = False\n",
+    "    \n",
+    "    #analzye the doe\n",
+    "    tone_analysis = tone_analyzer.tone(\n",
+    "        {\"text\": in_text},\n",
+    "        content_type=\"application/json\",\n",
+    "        content_language=\"en\",\n",
+    "        accept_language=\"en\",\n",
+    "    ).get_result()\n",
+    "    \n",
+    "    # debug\n",
+    "    #print (f'in_text: {in_text}\\n')\n",
+    "    # print (f'json dumpgs {json.dumps(tone_analysis, indent=2)}\\n')\n",
+    " \n",
+    "    #define list of tones\n",
+    "    tone_list = ['excited', 'frustrated','impolite', 'polite', 'sad', 'satisfied', 'sympathetic', \n",
+    "             'anger', 'disgust', 'fear', 'joy', 'sadness',\n",
+    "            'analytical', 'confident', 'tentative',\n",
+    "            'openness_big5', 'conscientiousness_big5', 'extraversion_big5', 'agreeableness_big5',  'emotional_range_big5']\n",
+    "    #create tone df with all zeros\n",
+    "    zero_df = pd.DataFrame(0, index=np.arange(1), columns=tone_list)\n",
+    "    \n",
+    "    #create sentence tone df\n",
+    "    # check if there is a sensettone, then put \n",
+    "    try:\n",
+    "        sentences_tone_df = json_normalize(\n",
+    "            data=tone_analysis[\"sentences_tone\"],\n",
+    "            record_path=[\"tones\"],\n",
+    "            meta=[\"sentence_id\", \"text\"],\n",
+    "            )\n",
+    "        if not(sentences_tone_df.empty):\n",
+    "            sent_tone = True\n",
+    "        \n",
+    "    except:\n",
+    "        set_tone = False\n",
+    "    \n",
+    "    #change it to a dataframe\n",
+    "    try:\n",
+    "        doc_tone_df = json_normalize(data=tone_analysis[\"document_tone\"], record_path=[\"tones\"])\n",
+    "        #debug \n",
+    "         #print (f'doc_tone_df is true: {doc_tone_df}\\n')\n",
+    "        if not(doc_tone_df.empty):\n",
+    "            doc_tone = True\n",
+    "    except:\n",
+    "        doc_tone = False\n",
+    "        \n",
+    "    \n",
+    "    #creae summary fo all tones\n",
+    "    # debug print (f'sent_done: {sent_tone}\\n')\n",
+    "    # debug print (f'doc_tone: {doc_tone}\\n')\n",
+    "    if sent_tone:\n",
+    "        tsp_df = sentences_tone_df.groupby('tone_id').sum().transpose()\n",
+    "    elif doc_tone:\n",
+    "        tsp_df = doc_tone_df.groupby('tone_id').sum().transpose()\n",
+    "    else:\n",
+    "        # blank\n",
+    "        return zero_df.iloc[0]\n",
+    "\n",
+    "    \n",
+    "\n",
+    "    #replace falues from tone_df\n",
+    "    zero_df [tsp_df.columns] = tsp_df[tsp_df.columns].values\n",
+    "       \n",
+    "    # debug print (f'zero_df[0]: {zero_df.iloc[0]}\\n')  \n",
+    "\n",
+    "    return zero_df.iloc[0]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 206,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# test_df = sentences_tone_df.copy()\n",
+    "\n",
+    "tone_list = ['excited', 'frustrated','impolite', 'polite', 'sad', 'satisfied', 'sympathetic', \n",
+    "             'anger', 'disgust', 'fear', 'joy', 'sadness',\n",
+    "            'analytical', 'confident', 'tentative',\n",
+    "            'openness_big5', 'conscientiousness_big5', 'extraversion_big5', 'agreeableness_big5',  'emotional_range_big5']\n",
+    "tone_analyzer = init_ibm()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 207,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# main set to attach tones to dataframe\n",
+    "\n",
+    "test_df = news_price.copy()\n",
+    "\n",
+    "test_df[tone_list] = test_df['text'].apply(lambda x: create_tone_series(x))\n",
+    "# test_df.insert(1, tone_list) = test_df['text'].apply(lambda x: create_tone_series(x))\n",
+    "\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 208,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# reindext  by combining list\n",
+    "# tone columns + original columns\n",
+    "new_column_order = tone_list + news_price.columns.to_list() \n",
+    "\n",
+    "# delete these line\n",
+    "# columnsTitles = ['onething', 'secondthing', 'otherthing']\n",
+    "# frame = frame.reindex(columns=columnsTitles)\n",
+    "LSTM_input_df = test_df.copy()\n",
+    "LSTM_input_df = LSTM_input_df.reindex (columns = new_column_order)\n",
+    "# drop the text column\n",
+    "LSTM_input_df.drop('text', 1, inplace = True)\n",
+    "# new_df = new_df []\n",
+    "# LSTM_input_df.head (1)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## <span style=\"color:red\">Section 5 Combine Data"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## <span style=\"color:red\">Section 6: LSTM</span>."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### 6.1 Notes\n",
+    "1. it takes raw df, change to a fucntion\n",
+    "2. imports on top may not be necessary or should be pulled into top\n",
+    "3. Make into a function"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### 6.x create chart of actual vs predicted\n",
+    "1. remove all items called and change raw df to log "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# from math import sqrt\n",
+    "# from numpy import concatenate\n",
+    "# from matplotlib import pyplot\n",
+    "# from pandas import read_csv\n",
+    "# from pandas import DataFrame\n",
+    "# from pandas import concat\n",
+    "# from sklearn.preprocessing import MinMaxScaler\n",
+    "# from sklearn.preprocessing import LabelEncoder\n",
+    "# from sklearn.metrics import mean_squared_error\n",
+    "# from keras.models import Sequential\n",
+    "# from keras.layers import Dense\n",
+    "# from keras.layers import LSTM\n",
+    " \n",
+    "# convert series to supervised learning\n",
+    "def series_to_supervised(data, n_in=1, n_out=1, dropnan=True):\n",
+    "    n_vars = 1 if type(data) is list else data.shape[1]\n",
+    "    df = DataFrame(data)\n",
+    "    cols, names = list(), list()\n",
+    "    # input sequence (t-n, ... t-1)\n",
+    "    for i in range(n_in, 0, -1):\n",
+    "        cols.append(df.shift(i))\n",
+    "        names += [('var%d(t-%d)' % (j+1, i)) for j in range(n_vars)]\n",
+    "    # forecast sequence (t, t+1, ... t+n)\n",
+    "    for i in range(0, n_out):\n",
+    "        cols.append(df.shift(-i))\n",
+    "        if i == 0:\n",
+    "            names += [('var%d(t)' % (j+1)) for j in range(n_vars)]\n",
+    "        else:\n",
+    "            names += [('var%d(t+%d)' % (j+1, i)) for j in range(n_vars)]\n",
+    "    # put it all together\n",
+    "    agg = concat(cols, axis=1)\n",
+    "    agg.columns = names\n",
+    "    # drop rows with NaN values\n",
+    "    if dropnan:\n",
+    "        agg.dropna(inplace=True)\n",
+    "    return agg\n",
+    " \n",
+    "# load dataset\n",
+    "# dataset = read_csv('pollution.csv', header=0, index_col=0)\n",
+    "# dataset = raw_df\n",
+    "# dataset = date_index_df\n",
+    "dataset = LSTM_input_df\n",
+    "values = dataset.values\n",
+    "# integer encode direction\n",
+    "\n",
+    "# take this out\n",
+    "# encoder = LabelEncoder()\n",
+    "# values[:,4] = encoder.fit_transform(values[:,4])\n",
+    "\n",
+    "# ensure all data is float\n",
+    "values = values.astype('float32')\n",
+    "# normalize features\n",
+    "\n",
+    "# debug\n",
+    "print (f'value shape: {values.shape}') #debug\n",
+    "\n",
+    "scaler = MinMaxScaler(feature_range=(0, 1))\n",
+    "scaled = scaler.fit_transform(values)\n",
+    "# frame as supervised learning\n",
+    "reframed = series_to_supervised(scaled, 1, 1)\n",
+    "# drop columns we don't want to predict\n",
+    "\n",
+    "# redo this secttion\n",
+    "# reframed.drop(reframed.columns[[9,10,11,12,13,14,15]], axis=1, inplace=True)\n",
+    "## num_col_to_drop = lstm_input.shape[1] - scaled_data.shape[1]\n",
+    "#### drop the columns at the end\n",
+    "## lstm_input = lstm_input.iloc[:, : - num_col_to_drop]\n",
+    "\n",
+    "#above \n",
+    "#calculate the number of columns to drop\n",
+    "num_col_to_drop =  reframed.shape[1] - dataset.shape[1] -1\n",
+    "# drop the clast columns\n",
+    "reframed = reframed.iloc[:, : -num_col_to_drop]\n",
+    "print (f'reframe shape: {reframed.shape}')\n",
+    "#\n",
+    "\n",
+    "# print(reframed.head())\n",
+    " \n",
+    "# split into train and test sets\n",
+    "values = reframed.values\n",
+    "\n",
+    "# redo this section\n",
+    "# n_train_hours = 365 * 24\n",
+    "# train = values[:n_train_hours, :]\n",
+    "# test = values[n_train_hours:, :]\n",
+    "\n",
+    "# redone here\n",
+    "# set test_fraction (set it to 0.7)\n",
+    "test_fract = 0.7\n",
+    "split = int(test_fract * len(values))\n",
+    "train = values[:split, :]\n",
+    "test = values [split:, :]\n",
+    "\n",
+    "\n",
+    "# split into input and outputs\n",
+    "train_X, train_y = train[:, :-1], train[:, -1]\n",
+    "test_X, test_y = test[:, :-1], test[:, -1]\n",
+    "# reshape input to be 3D [samples, timesteps, features]\n",
+    "train_X = train_X.reshape((train_X.shape[0], 1, train_X.shape[1]))\n",
+    "test_X = test_X.reshape((test_X.shape[0], 1, test_X.shape[1]))\n",
+    "\n",
+    "# print(train_X.shape, train_y.shape, test_X.shape, test_y.shape)\n",
+    " \n",
+    "# design network\n",
+    "model = Sequential()\n",
+    "model.add(LSTM(50, input_shape=(train_X.shape[1], train_X.shape[2])))\n",
+    "model.add(Dense(1))\n",
+    "model.compile(loss='mae', optimizer='adam')\n",
+    "# fit network\n",
+    "# change verbose to zo\n",
+    "history = model.fit(train_X, train_y, epochs=50, batch_size=72, validation_data=(test_X, test_y), verbose=0, shuffle=False)\n",
+    "\n",
+    "# plot history\n",
+    "pyplot.plot(history.history['loss'], label='train')\n",
+    "pyplot.plot(history.history['val_loss'], label='test')\n",
+    "pyplot.legend()\n",
+    "pyplot.show()\n",
+    " \n",
+    "# make a prediction\n",
+    "yhat = model.predict(test_X)\n",
+    "test_X = test_X.reshape((test_X.shape[0], test_X.shape[2]))\n",
+    "# invert scaling for forecast\n",
+    "inv_yhat = concatenate((yhat, test_X[:, 1:]), axis=1)\n",
+    "\n",
+    "# debug\n",
+    "print (f'inv_y shape: {inv_yhat.shape}')\n",
+    "\n",
+    "inv_yhat = scaler.inverse_transform(inv_yhat)\n",
+    "inv_yhat = inv_yhat[:,0]\n",
+    "# invert scaling for actual\n",
+    "test_y = test_y.reshape((len(test_y), 1))\n",
+    "inv_y = concatenate((test_y, test_X[:, 1:]), axis=1)\n",
+    "inv_y = scaler.inverse_transform(inv_y)\n",
+    "inv_y = inv_y[:,0]\n",
+    "# calculate RMSE\n",
+    "rmse = sqrt(mean_squared_error(inv_y, inv_yhat))\n",
+    "print('Test RMSE: %.3f' % rmse)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "pyplot.plot (inv_yhat)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Section 7 Dashboard"
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.7.9"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 4
+}
