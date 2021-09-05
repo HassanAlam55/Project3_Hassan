@@ -2,6 +2,7 @@
 ![FrameWork.png](./Images/FrameWork.png)<br>
 ## Overview
 The purpose of this project is to build a Machine Learning Platform for Time Series or Sequential Data and make predictions for the future.<br>
+Note: You will need to get your own .env file to run the programs
 ### Architecture
 The Architechture is desiged to take:
 <ol>
